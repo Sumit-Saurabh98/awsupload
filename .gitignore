@@ -1,0 +1,22 @@
+# Node
+node_modules/
+dist/
+build/
+
+# Environment files
+.env
+*.env
+*/.env
+server/.env
+client/.env
+.env.local
+.env.*.local
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-error.log*
+
+# macOS
+.DS_Store
