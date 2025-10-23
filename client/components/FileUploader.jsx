@@ -204,7 +204,7 @@ export default function FileUploader() {
   // UI Rendering
   // ========================
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 text-black">
       <form onSubmit={handleStartUpload} className="space-y-4">
         <div>
           <label className="block text-sm font-medium text-gray-700">
