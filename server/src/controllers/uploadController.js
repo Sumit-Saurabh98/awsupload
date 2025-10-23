@@ -11,7 +11,9 @@ import {
   headObject,
 } from "../services/s3Service.js";
 
-const MAX_SINGLE_UPLOAD = process.env.MAX_SINGLE_UPLOAD_SIZE;
+// parse max single upload size (bytes) from env, fallback to 5MB
+const MAX_SINGLE_UPLOAD =
+  Number(process.env.MAX_SINGLE_UPLOAD_SIZE) || 5 * 1024 * 1024;
 
 // helper to generate s3 key (in production you might prefer adding userOd to it)
 function generateKey(fileName) {
@@ -91,7 +93,7 @@ export async function getPartUrl(req, res) {
   try {
     const { resourceId, partNumber } = req.query;
 
-    if (!resourceId || partNumber) {
+    if (!resourceId || !partNumber) {
       return res
         .status(400)
         .json({ error: "missing resourceId or partNumber" });
@@ -138,7 +140,8 @@ export async function completeUpload(req, res) {
     if (!doc.s3.uploadId) {
       // single file - verify object exists and record metadata
       const info = await headObject(doc.s3.key);
-      doc.s3.etag = info.ETag;
+      // normalize ETag (may be quoted)
+      doc.s3.etag = info.ETag ? info.ETag.replace(/\"/g, "") : info.ETag;
       doc.s3.status = "complete";
       await doc.save();
       return res.status(200).json({ ok: true, s3: doc.s3 });
@@ -150,17 +153,45 @@ export async function completeUpload(req, res) {
           .json({ error: "Parts are required for multipart complete" });
       }
       // complete on s3
+      // AWS requires parts sorted by PartNumber
+      const normalizedParts = parts
+        .map((p) => ({
+          PartNumber: Number(p.PartNumber ?? p.partNumber),
+          ETag: String(p.ETag ?? p.ETag ?? ""),
+        }))
+        .sort((a, b) => a.PartNumber - b.PartNumber)
+        .map((p) => ({
+          PartNumber: p.PartNumber,
+          ETag: p.ETag.replace(/"/g, ""),
+        }));
+
+      // validate normalized parts
+      const invalid = normalizedParts.find(
+        (p) => !Number.isFinite(p.PartNumber) || !p.ETag || p.PartNumber <= 0
+      );
+      if (invalid) {
+        return res
+          .status(400)
+          .json({ error: "Invalid parts provided for multipart complete" });
+      }
 
       const result = await completeMultiPartUpload(
         doc.s3.key,
         doc.s3.uploadId,
-        parts
+        normalizedParts
       );
-      doc.s3.etag = result.ETag;
+
+      // save parts and metadata in DB
+      doc.s3.parts = normalizedParts;
+      doc.s3.etag = result?.ETag
+        ? String(result.ETag).replace(/\"/g, "")
+        : result?.ETag;
       // headObject to get the final size
       const info = await headObject(doc.s3.key);
-      doc.s3.size = info.ContentLength;
+      doc.s3.size = info.ContentLength || doc.s3.size;
       doc.s3.status = "complete";
+      // clear uploadId as it's finished
+      doc.s3.uploadId = undefined;
       await doc.save();
       return res.status(200).json({ ok: true, s3: doc.s3 });
     }
@@ -197,27 +228,6 @@ export async function abortUpload(req, res) {
       await doc.save();
       return res.json({ ok: true, message: "single upload marked aborted" });
     }
-  } catch (error) {
-    console.log(error);
-    return res.status(500).json({ error: error.message });
-  }
-}
-
-// get resource metadata for resume
-export async function getResource(req, res) {
-  try {
-    const { resourceId } = req.body;
-    if (!resourceId) {
-      return res.status(400).json({ error: "Missing resource id" });
-    }
-
-    const doc = await Resource.findById(resourceId);
-
-    if (!doc) {
-      return res.status(400).json({ error: "Resource not found" });
-    }
-
-    return res.status(200).json({ resource: doc });
   } catch (error) {
     console.log(error);
     return res.status(500).json({ error: error.message });
