@@ -137,7 +137,7 @@ const MultiSelect = ({
 };
 
 // Custom Form Component
-interface FieldConfig {
+export interface FieldConfig {
   name: string;
   label: string;
   type: 'text' | 'email' | 'number' | 'password' | 'select' | 'multiselect' | 'textarea' | 'file' | 'radio';
@@ -152,7 +152,7 @@ interface CustomFormProps {
   submitButtonText?: string;
 }
 
-const CustomForm = ({ fields, schema, onSubmit, submitButtonText = 'Submit' }: CustomFormProps) => {
+export const CustomForm = ({ fields, schema, onSubmit, submitButtonText = 'Submit' }: CustomFormProps) => {
   const { control, handleSubmit, formState: { errors } } = useForm({
     resolver: zodResolver(schema),
     defaultValues: fields.reduce((acc, field) => {
@@ -161,7 +161,8 @@ const CustomForm = ({ fields, schema, onSubmit, submitButtonText = 'Submit' }: C
       } else if (field.type === 'multiselect') {
         acc[field.name] = [];
       } else if (field.type === 'number') {
-        acc[field.name] = undefined;
+        // Keep controlled from mount: use empty string for number inputs
+        acc[field.name] = '';
       } else {
         acc[field.name] = '';
       }
@@ -185,15 +186,17 @@ const CustomForm = ({ fields, schema, onSubmit, submitButtonText = 'Submit' }: C
                   <textarea
                     {...formField}
                     placeholder={field.placeholder}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors[field.name] ? 'border-red-500' : 'border-gray-300'}`}
                     rows={4}
-                    value={formField.value as string}
+                    value={(formField.value as string) ?? ''}
+                    onChange={(e) => formField.onChange(e.target.value)}
                   />
                 ) : field.type === 'select' ? (
                   <select
                     {...formField}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    value={formField.value as string}
+                    className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors[field.name] ? 'border-red-500' : 'border-gray-300'}`}
+                    value={(formField.value as string) ?? ''}
+                    onChange={(e) => formField.onChange(e.target.value)}
                   >
                     <option value="">Select an option</option>
                     {field.options?.map((opt) => (
@@ -203,20 +206,22 @@ const CustomForm = ({ fields, schema, onSubmit, submitButtonText = 'Submit' }: C
                     ))}
                   </select>
                 ) : field.type === 'multiselect' ? (
-                  <MultiSelect
-                    options={field.options || []}
-                    value={formField.value as string[]}
-                    onChange={formField.onChange}
-                    placeholder={field.placeholder}
-                  />
+                  <div className={errors[field.name] ? 'border border-red-500 rounded-md' : ''}>
+                    <MultiSelect
+                      options={field.options || []}
+                      value={(formField.value as string[]) ?? []}
+                      onChange={formField.onChange}
+                      placeholder={field.placeholder}
+                    />
+                  </div>
                 ) : field.type === 'file' ? (
                   <Dropzone
-                    value={formField.value as File[]}
+                    value={(formField.value as File[]) ?? []}
                     onChange={formField.onChange}
                     error={errors[field.name]?.message as string}
                   />
                 ) : field.type === 'radio' ? (
-                  <div className="space-y-2">
+                  <div className={`space-y-2 ${errors[field.name] ? 'border border-red-500 rounded-md p-2' : ''}`}>
                     {field.options?.map((opt) => (
                       <label key={opt.value} className="flex items-center space-x-2 cursor-pointer">
                         <input
@@ -235,13 +240,19 @@ const CustomForm = ({ fields, schema, onSubmit, submitButtonText = 'Submit' }: C
                     {...formField}
                     type={field.type}
                     placeholder={field.placeholder}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    value={formField.value as string | number}
+                    className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors[field.name] ? 'border-red-500' : 'border-gray-300'}`}
+                    value={
+                      field.type === 'number'
+                        ? String((formField.value as string | number | undefined) ?? '')
+                        : ((formField.value as string) ?? '')
+                    }
                     onChange={(e) => {
                       if (field.type === 'number') {
-                        formField.onChange(e.target.value ? Number(e.target.value) : undefined);
+                        const v = e.target.value;
+                        // keep DOM controlled with string, but store numeric when possible
+                        formField.onChange(v === '' ? '' : Number(v));
                       } else {
-                        formField.onChange(e);
+                        formField.onChange(e.target.value);
                       }
                     }}
                   />
@@ -264,177 +275,3 @@ const CustomForm = ({ fields, schema, onSubmit, submitButtonText = 'Submit' }: C
     </div>
   );
 };
-
-// All Fields Demo Page
-const AllFieldsPage = () => {
-  const allFieldsSchema = z.object({
-    fullName: z.string().min(2, 'Name must be at least 2 characters'),
-    email: z.string().email('Invalid email address'),
-    age: z.number().min(18, 'Must be at least 18 years old'),
-    password: z.string().min(8, 'Password must be at least 8 characters'),
-    country: z.string().min(1, 'Please select a country'),
-    skills: z.array(z.string()).min(1, 'Select at least one skill'),
-    bio: z.string().min(10, 'Bio must be at least 10 characters'),
-    resume: z.array(z.instanceof(File)).min(1, 'Please upload at least one file'),
-    gender: z.string().min(1, 'Please select a gender'),
-  });
-
-  const allFields: FieldConfig[] = [
-    { name: 'fullName', label: 'Full Name', type: 'text', placeholder: 'Enter your full name' },
-    { name: 'email', label: 'Email', type: 'email', placeholder: 'Enter your email' },
-    { name: 'age', label: 'Age', type: 'number', placeholder: 'Enter your age' },
-    { name: 'password', label: 'Password', type: 'password', placeholder: 'Create a password' },
-    {
-      name: 'country',
-      label: 'Country',
-      type: 'select',
-      options: [
-        { value: 'us', label: 'United States' },
-        { value: 'uk', label: 'United Kingdom' },
-        { value: 'in', label: 'India' },
-        { value: 'ca', label: 'Canada' },
-      ],
-    },
-    {
-      name: 'skills',
-      label: 'Skills',
-      type: 'multiselect',
-      placeholder: 'Select your skills',
-      options: [
-        { value: 'javascript', label: 'JavaScript' },
-        { value: 'react', label: 'React' },
-        { value: 'nodejs', label: 'Node.js' },
-        { value: 'python', label: 'Python' },
-        { value: 'typescript', label: 'TypeScript' },
-      ],
-    },
-    { name: 'bio', label: 'Bio', type: 'textarea', placeholder: 'Tell us about yourself' },
-    { name: 'resume', label: 'Resume', type: 'file' },
-    {
-      name: 'gender',
-      label: 'Gender',
-      type: 'radio',
-      options: [
-        { value: 'male', label: 'Male' },
-        { value: 'female', label: 'Female' },
-        { value: 'other', label: 'Other' },
-      ],
-    },
-  ];
-
-  const handleAllFieldsSubmit = (data: Record<string, unknown>) => {
-    console.log('All Fields Data:', data);
-  };
-
-  return (
-    <div className="max-w-2xl mx-auto p-6 bg-white rounded-lg shadow-md">
-      <h2 className="text-2xl font-bold mb-6 text-gray-800">Complete Form</h2>
-      <CustomForm fields={allFields} schema={allFieldsSchema} onSubmit={handleAllFieldsSubmit} />
-    </div>
-  );
-};
-
-
-// // Login Page
-// const LoginPage = ({ onSwitchToSignup }: { onSwitchToSignup: () => void }) => {
-//   const loginSchema = z.object({
-//     email: z.string().email('Invalid email address'),
-//     password: z.string().min(6, 'Password must be at least 6 characters'),
-//   });
-
-//   const loginFields: FieldConfig[] = [
-//     { name: 'email', label: 'Email', type: 'email', placeholder: 'Enter your email' },
-//     { name: 'password', label: 'Password', type: 'password', placeholder: 'Enter your password' },
-//   ];
-
-//   const handleLogin = (data: Record<string, unknown>) => {
-//     console.log('Login Data:', data);
-//   };
-
-//   return (
-//     <div className="max-w-md mx-auto p-6 bg-white rounded-lg shadow-md">
-//       <h2 className="text-2xl font-bold mb-6 text-gray-800">Login</h2>
-//       <CustomForm fields={loginFields} schema={loginSchema} onSubmit={handleLogin} submitButtonText="Login" />
-//       <p className="mt-4 text-center text-sm text-gray-600">
-//         Don&apos;t have an account?{' '}
-//         <button onClick={onSwitchToSignup} className="text-blue-600 hover:underline">
-//           Sign up
-//         </button>
-//       </p>
-//     </div>
-//   );
-// };
-
-// // Signup Page
-// const SignupPage = ({ onSwitchToLogin }: { onSwitchToLogin: () => void }) => {
-//   const signupSchema = z.object({
-//     username: z.string().min(3, 'Username must be at least 3 characters'),
-//     email: z.string().email('Invalid email address'),
-//     password: z.string().min(6, 'Password must be at least 6 characters'),
-//   });
-
-//   const signupFields: FieldConfig[] = [
-//     { name: 'username', label: 'Username', type: 'text', placeholder: 'Enter your username' },
-//     { name: 'email', label: 'Email', type: 'email', placeholder: 'Enter your email' },
-//     { name: 'password', label: 'Password', type: 'password', placeholder: 'Enter your password' },
-//   ];
-
-//   const handleSignup = (data: Record<string, unknown>) => {
-//     console.log('Signup Data:', data);
-//   };
-
-//   return (
-//     <div className="max-w-md mx-auto p-6 bg-white rounded-lg shadow-md">
-//       <h2 className="text-2xl font-bold mb-6 text-gray-800">Sign Up</h2>
-//       <CustomForm fields={signupFields} schema={signupSchema} onSubmit={handleSignup} submitButtonText="Sign Up" />
-//       <p className="mt-4 text-center text-sm text-gray-600">
-//         Already have an account?{' '}
-//         <button onClick={onSwitchToLogin} className="text-blue-600 hover:underline">
-//           Login
-//         </button>
-//       </p>
-//     </div>
-//   );
-// };
-
-// Main App
-// export default function App() {
-//   const [currentPage, setCurrentPage] = useState<'login' | 'signup' | 'allfields'>('login');
-
-//   return (
-//     <div className="min-h-screen bg-gray-100 py-8">
-//       <div className="max-w-4xl mx-auto mb-6">
-//         <div className="flex justify-center gap-4">
-//           <button
-//             onClick={() => setCurrentPage('login')}
-//             className={`px-4 py-2 rounded-md ${
-//               currentPage === 'login' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700'
-//             }`}
-//           >
-//             Login
-//           </button>
-//           <button
-//             onClick={() => setCurrentPage('signup')}
-//             className={`px-4 py-2 rounded-md ${
-//               currentPage === 'signup' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700'
-//             }`}
-//           >
-//             Signup
-//           </button>
-//           <button
-//             onClick={() => setCurrentPage('allfields')}
-//             className={`px-4 py-2 rounded-md ${
-//               currentPage === 'allfields' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700'
-//             }`}
-//           >
-//             All Fields Demo
-//           </button>
-//         </div>
-//       </div>
-
-//       {currentPage === 'login' && <LoginPage onSwitchToSignup={() => setCurrentPage('signup')} />}
-//       {currentPage === 'signup' && <SignupPage onSwitchToLogin={() => setCurrentPage('login')} />}
-//       {currentPage === 'allfields' && <AllFieldsPage />}
-//     </div>
-//   );
-// }
